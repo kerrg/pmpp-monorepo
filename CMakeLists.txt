@@ -6,9 +6,17 @@ set(CMAKE_CUDA_ARCHITECTURES 52)
 # 2. Add the CUDA language to the project
 project(pmpp-monorepo LANGUAGES CXX CUDA)
 
-# Per-target exception settings are now used.
-# 'StandardCpp' will have exceptions enabled by default.
+enable_testing()
 
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+
+# 1. Ask CMake to find the directory containing the header
+# vcpkg makes sure its 'installed' directory is in the search path
+find_path(SAFEINT_INCLUDE_DIRS "SafeInt.hpp")
+
+find_package(JPEG REQUIRED)
+
+# Per-target exception settings are now used.
 add_executable(${PROJECT_NAME} main.cu)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -16,12 +24,4 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
         CUDA_STANDARD_REQUIRED ON
 )
 
-add_executable(s3_rgb_conversion Chap03/s3_rgb_conversion.cu)
-
-# Copy the sample image to the build directory so the executable can find it
-file(COPY Chap03/sample.jpg DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-set_target_properties(s3_rgb_conversion PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-)
+add_subdirectory(Chap03)
