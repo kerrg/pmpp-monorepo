@@ -1,10 +1,21 @@
 cmake_minimum_required(VERSION 3.18)
 
-# 1. Set the architecture BEFORE the project() call
-set(CMAKE_CUDA_ARCHITECTURES 52)
+option(BUILD_CUDA_EXECUTABLES "Build CUDA executables" ON)
+option(BUILD_HOST_TESTS_ONLY "Build only host-side tests" OFF)
 
-# 2. Add the CUDA language to the project
-project(pmpp-monorepo LANGUAGES CXX CUDA)
+if(BUILD_HOST_TESTS_ONLY)
+    set(BUILD_CUDA_EXECUTABLES OFF)
+endif()
+
+if(BUILD_CUDA_EXECUTABLES)
+    # 1. Set the architecture BEFORE the project() call
+    set(CMAKE_CUDA_ARCHITECTURES 52)
+
+    # 2. Add the CUDA language to the project
+    project(pmpp-monorepo LANGUAGES CXX CUDA)
+else()
+    project(pmpp-monorepo LANGUAGES CXX)
+endif()
 
 enable_testing()
 
@@ -16,12 +27,14 @@ find_path(SAFEINT_INCLUDE_DIRS "SafeInt.hpp")
 
 find_package(JPEG REQUIRED)
 
-# Per-target exception settings are now used.
-add_executable(${PROJECT_NAME} main.cu)
+if(BUILD_CUDA_EXECUTABLES)
+    # Per-target exception settings are now used.
+    add_executable(${PROJECT_NAME} main.cu)
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+            CUDA_STANDARD 17
+            CUDA_STANDARD_REQUIRED ON
+    )
+endif()
 
 add_subdirectory(Chap03)

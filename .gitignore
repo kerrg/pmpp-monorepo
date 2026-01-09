@@ -5,3 +5,5 @@
 *.cubin
 *.fatbin
 .idea/
+build_host_tests/
+host_tests_build_clean/
