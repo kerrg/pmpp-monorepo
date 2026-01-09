@@ -8,7 +8,7 @@
 #include <numeric>
 #include <vector>
 
-#include "cuda_util.h"
+#include <CudaUtil.h>
 
 namespace {
 constexpr size_t kTestDataSize = 32;

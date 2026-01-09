@@ -2,7 +2,7 @@
 #include <memory>
 #include <vector>
 
-#include "CudaUtil.h"
+#include <CudaUtil.h>
 #include "SafeInt.hpp"
 #include "JpegUtil.h"
 

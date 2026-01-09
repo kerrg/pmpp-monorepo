@@ -46,3 +46,11 @@ auto MakeCudaUnique(size_t count) {
   CUDA_CHECK(cudaMalloc(&raw_ptr, size_in_bytes));
   return CudaUniquePtr(raw_ptr);
 }
+
+// Used to calculate how many blocks are in the grid, as you have to round up or
+// elements will be missed.
+
+template <typename T>
+T div_up(T a, T b) {
+    return (a + b - 1) / b;
+}

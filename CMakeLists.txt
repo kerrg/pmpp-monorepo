@@ -27,6 +27,8 @@ find_path(SAFEINT_INCLUDE_DIRS "SafeInt.hpp")
 
 find_package(JPEG REQUIRED)
 
+include_directories(common)
+
 if(BUILD_CUDA_EXECUTABLES)
     # Per-target exception settings are now used.
     add_executable(${PROJECT_NAME} main.cu)
