@@ -38,3 +38,4 @@ if(BUILD_CUDA_EXECUTABLES)
 endif()
 
 add_subdirectory(Chap03)
+add_subdirectory(Chap02)
