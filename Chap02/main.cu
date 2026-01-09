@@ -1,11 +1,9 @@
 #include <cuda_runtime.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <numeric>
 #include <vector>
 
 #include <CudaUtil.h>
@@ -63,18 +61,11 @@ void PrettyPrintResult(const std::vector<float>& vec_c) {
 
 int main() {
   // --- Basic 16-element test ---
-  std::vector<float> vec_a(kTestDataSize);
-  std::vector<float> vec_b(kTestDataSize);
+  const std::vector<float> vec_a = {0.0f, 1.0f, 2.0f,  3.0f,  4.0f, 5.0f, 6.0f, 7.0f,
+                                  8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f};
+  const std::vector<float> vec_b = {0.0f, 2.0f, 4.0f,  6.0f,  8.0f, 10.0f, 12.0f, 14.0f,
+                                  16.0f, 18.0f, 20.0f, 22.0f, 24.0f, 26.0f, 28.0f, 30.0f};
   std::vector<float> vec_c(kTestDataSize);
-
-  // Initialize test vectors
-  std::iota(vec_a.begin(), vec_a.end(), 0.0f);
-
-  std::generate(vec_b.begin(), vec_b.end(), [counter = 0.0f]() mutable {
-    const float val = counter * 2.0f;
-    counter += 1.0f;
-    return val;
-  });
 
   VecAdd(vec_a, vec_b, &vec_c);
 

@@ -1,11 +1,9 @@
 #include <cuda_runtime.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <numeric>
 #include <vector>
 
 #include <CudaUtil.h>
@@ -74,17 +72,6 @@ void PrettyPrintResult(const std::vector<float>& vec_c) {
   std::cout << " ]" << std::endl;
 }
 
-void InitializeTestVectors(std::vector<float>& vec_a, std::vector<float>& vec_b) {
-  // Initialize test vectors
-  std::iota(vec_a.begin(), vec_a.end(), 0.0f);
-
-  std::generate(vec_b.begin(), vec_b.end(), [counter = 0.0f]() mutable {
-    const float val = counter * 2.0f;
-    counter += 1.0f;
-    return val;
-  });
-}
-
 void CalculateExpectedResult(const std::vector<float>& vec_a,
                              const std::vector<float>& vec_b,
                              std::vector<float>* vec_c_cpu) {
@@ -114,12 +101,18 @@ void VerifyResults(const std::vector<float>& vec_c_gpu,
 
 int main() {
   // --- Basic test ---
-  std::vector<float> vec_a(kTestDataSize);
-  std::vector<float> vec_b(kTestDataSize);
+  const std::vector<float> vec_a = {
+      0.0f,  1.0f,  2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,  9.0f,
+      10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 17.0f, 18.0f, 19.0f,
+      20.0f, 21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f, 29.0f,
+      30.0f, 31.0f};
+  const std::vector<float> vec_b = {
+      0.0f,  2.0f,  4.0f,  6.0f,  8.0f,  10.0f, 12.0f, 14.0f, 16.0f, 18.0f,
+      20.0f, 22.0f, 24.0f, 26.0f, 28.0f, 30.0f, 32.0f, 34.0f, 36.0f, 38.0f,
+      40.0f, 42.0f, 44.0f, 46.0f, 48.0f, 50.0f, 52.0f, 54.0f, 56.0f, 58.0f,
+      60.0f, 62.0f};
   std::vector<float> vec_c_gpu(kTestDataSize / 2); // GPU output is half size
   std::vector<float> vec_c_cpu(kTestDataSize / 2); // CPU output is half size
-
-  InitializeTestVectors(vec_a, vec_b);
 
   CalculateExpectedResult(vec_a, vec_b, &vec_c_cpu);
 
