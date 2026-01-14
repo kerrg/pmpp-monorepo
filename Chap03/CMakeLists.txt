@@ -5,8 +5,9 @@ if(BUILD_CUDA_EXECUTABLES)
     add_executable(${S3_RGB_CONVERSION} s3_rgb_conversion.cu JpegUtil.cpp)
 
     # Link JPEGLIB and SafeInt headers
+    find_package(CLI11 CONFIG REQUIRED)
     target_include_directories(${S3_RGB_CONVERSION} PRIVATE ${SAFEINT_INCLUDE_DIRS})
-    target_link_libraries(${S3_RGB_CONVERSION} PRIVATE JPEG::JPEG)
+    target_link_libraries(${S3_RGB_CONVERSION} PRIVATE JPEG::JPEG CLI11::CLI11)
 
     set_target_properties(${S3_RGB_CONVERSION} PROPERTIES
             CUDA_STANDARD 17
@@ -15,7 +16,7 @@ if(BUILD_CUDA_EXECUTABLES)
 
     # Define a custom target to run the executable with default arguments
     add_custom_target(run
-        COMMAND ${S3_RGB_CONVERSION} ${CMAKE_CURRENT_BINARY_DIR}/sample.jpg /tmp/srgb_output.jpg
+        COMMAND ${S3_RGB_CONVERSION} -i ${CMAKE_CURRENT_BINARY_DIR}/sample.jpg -o /tmp/srgb_output.jpg -m color2grayscale
         DEPENDS ${S3_RGB_CONVERSION}
         COMMENT "Running ${S3_RGB_CONVERSION} with default arguments"
     )

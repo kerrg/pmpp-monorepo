@@ -4,6 +4,7 @@
   "dependencies": [
     "safeint",
     "libjpeg-turbo",
-    "gtest"
+    "gtest",
+    "cli11"
   ]
 }
