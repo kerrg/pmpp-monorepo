@@ -1,4 +1,3 @@
-#include <cctype>
 #include <climits>
 #include <cmath>
 #include <iostream>
@@ -10,6 +9,7 @@
 #include <CudaUtil.h>
 #include "SafeInt.hpp"
 #include "JpegUtil.h"
+#include "matrix_util.h"
 
 namespace {
     constexpr char kModeBlur[] = "blur";
@@ -18,11 +18,6 @@ namespace {
     constexpr int kCudaBlockSize = 16;
     constexpr int kDefaultBlurPasses = 3;
 
-    struct Matrix {
-        size_t rows = 0;
-        size_t cols = 0;
-        std::vector<float> values;
-    };
 } // namespace
 
 enum class Mode {
@@ -103,162 +98,6 @@ Mode ParseMode(const std::string& mode_string) {
     return Mode::ColorToGrayscale;
 }
 
-std::string Trim(const std::string& input) {
-    size_t start = 0;
-    while (start < input.size() && std::isspace(static_cast<unsigned char>(input[start]))) {
-        ++start;
-    }
-    size_t end = input.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(input[end - 1U]))) {
-        --end;
-    }
-    return input.substr(start, end - start);
-}
-
-std::string RemoveWhitespace(const std::string& input) {
-    std::string out;
-    out.reserve(input.size());
-    for (char ch : input) {
-        if (!std::isspace(static_cast<unsigned char>(ch))) {
-            out.push_back(ch);
-        }
-    }
-    return out;
-}
-
-bool ParseDims(const std::string& token, size_t* rows, size_t* cols) {
-    const size_t split = token.find_first_of("xX");
-    if (split == std::string::npos || split == 0 || split + 1 >= token.size()) {
-        return false;
-    }
-    try {
-        *rows = static_cast<size_t>(std::stoul(token.substr(0, split)));
-        *cols = static_cast<size_t>(std::stoul(token.substr(split + 1)));
-    } catch (...) {
-        return false;
-    }
-    return *rows > 0 && *cols > 0;
-}
-
-std::vector<std::string> SplitTopLevelComma(const std::string& input) {
-    std::vector<std::string> parts;
-    int brace_depth = 0;
-    int bracket_depth = 0;
-    size_t start = 0;
-    for (size_t i = 0; i < input.size(); ++i) {
-        const char ch = input[i];
-        if (ch == '{') {
-            ++brace_depth;
-        } else if (ch == '}') {
-            --brace_depth;
-        } else if (ch == '[') {
-            ++bracket_depth;
-        } else if (ch == ']') {
-            --bracket_depth;
-        } else if (ch == ',' && brace_depth == 0 && bracket_depth == 0) {
-            parts.push_back(Trim(input.substr(start, i - start)));
-            start = i + 1;
-        }
-        if (brace_depth < 0 || bracket_depth < 0) {
-            return {};
-        }
-    }
-    if (brace_depth != 0 || bracket_depth != 0) {
-        return {};
-    }
-    parts.push_back(Trim(input.substr(start)));
-    return parts;
-}
-
-bool ParseRow(const std::string& row_token, std::vector<float>* row_out) {
-    if (row_token.empty()) {
-        return false;
-    }
-    size_t start = 0;
-    while (start < row_token.size()) {
-        const size_t comma = row_token.find(',', start);
-        const size_t end = (comma == std::string::npos) ? row_token.size() : comma;
-        if (end == start) {
-            return false;
-        }
-        const std::string token = row_token.substr(start, end - start);
-        try {
-            size_t parsed = 0;
-            float value = std::stof(token, &parsed);
-            if (parsed != token.size()) {
-                return false;
-            }
-            row_out->push_back(value);
-        } catch (...) {
-            return false;
-        }
-        if (comma == std::string::npos) {
-            break;
-        }
-        start = comma + 1;
-    }
-    return !row_out->empty();
-}
-
-bool ParseMatrixLiteral(const std::string& input, Matrix* matrix_out) {
-    const std::string compact = RemoveWhitespace(input);
-    if (compact.size() < 4 || compact.front() != '{' || compact.back() != '}') {
-        return false;
-    }
-    const std::string inner = compact.substr(1, compact.size() - 2);
-    std::vector<std::vector<float>> rows;
-    size_t i = 0;
-    while (i < inner.size()) {
-        if (inner[i] == ',') {
-            ++i;
-            continue;
-        }
-        if (inner[i] != '[') {
-            return false;
-        }
-        const size_t close = inner.find(']', i + 1);
-        if (close == std::string::npos) {
-            return false;
-        }
-        std::vector<float> row_values;
-        if (!ParseRow(inner.substr(i + 1, close - i - 1), &row_values)) {
-            return false;
-        }
-        rows.push_back(std::move(row_values));
-        i = close + 1;
-    }
-    if (rows.empty()) {
-        return false;
-    }
-    const size_t cols = rows.front().size();
-    for (const auto& row : rows) {
-        if (row.size() != cols) {
-            return false;
-        }
-    }
-    matrix_out->rows = rows.size();
-    matrix_out->cols = cols;
-    matrix_out->values.clear();
-    matrix_out->values.reserve(matrix_out->rows * matrix_out->cols);
-    for (const auto& row : rows) {
-        matrix_out->values.insert(matrix_out->values.end(), row.begin(), row.end());
-    }
-    return true;
-}
-
-Matrix BuildSequentialMatrix(size_t rows, size_t cols, float start_value) {
-    Matrix matrix;
-    matrix.rows = rows;
-    matrix.cols = cols;
-    matrix.values.resize(rows * cols);
-    float value = start_value;
-    for (float& cell : matrix.values) {
-        cell = value;
-        value += 1.0f;
-    }
-    return matrix;
-}
-
 __global__ void MatMulKernel(const float* a, const float* b, float* c,
                              int a_rows, int a_cols, int b_cols) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -272,8 +111,8 @@ __global__ void MatMulKernel(const float* a, const float* b, float* c,
     }
 }
 
-Matrix Multiply(const Matrix& a, const Matrix& b) {
-    Matrix result;
+MatrixUtil::Matrix Multiply(const MatrixUtil::Matrix& a, const MatrixUtil::Matrix& b) {
+    MatrixUtil::Matrix result;
     result.rows = a.rows;
     result.cols = b.cols;
     result.values.assign(result.rows * result.cols, 0.0f);
@@ -312,27 +151,8 @@ Matrix Multiply(const Matrix& a, const Matrix& b) {
     return result;
 }
 
-void PrintMatrix(const Matrix& matrix, const std::string& label) {
-    std::cout << label << " (" << matrix.rows << "x" << matrix.cols << "):\n{\n";
-    for (size_t r = 0; r < matrix.rows; ++r) {
-        std::cout << "  [";
-        for (size_t c = 0; c < matrix.cols; ++c) {
-            if (c > 0) {
-                std::cout << ", ";
-            }
-            std::cout << matrix.values[r * matrix.cols + c];
-        }
-        std::cout << "]";
-        if (r + 1 < matrix.rows) {
-            std::cout << ",";
-        }
-        std::cout << "\n";
-    }
-    std::cout << "}" << std::endl;
-}
-
-Matrix MultiplyCpu(const Matrix& a, const Matrix& b) {
-    Matrix result;
+MatrixUtil::Matrix MultiplyCpu(const MatrixUtil::Matrix& a, const MatrixUtil::Matrix& b) {
+    MatrixUtil::Matrix result;
     result.rows = a.rows;
     result.cols = b.cols;
     result.values.assign(result.rows * result.cols, 0.0f);
@@ -347,7 +167,8 @@ Matrix MultiplyCpu(const Matrix& a, const Matrix& b) {
     return result;
 }
 
-bool VerifyMatrixResult(const Matrix& gpu, const Matrix& cpu, float tolerance) {
+bool VerifyMatrixResult(const MatrixUtil::Matrix& gpu, const MatrixUtil::Matrix& cpu,
+                        float tolerance) {
     if (gpu.rows != cpu.rows || gpu.cols != cpu.cols || gpu.values.size() != cpu.values.size()) {
         std::cerr << "Verification failed: mismatched result dimensions." << std::endl;
         return false;
@@ -372,34 +193,22 @@ int RunMatrixMultiplication(const std::string& matrix_sizes, const std::string& 
         return 1;
     }
 
-    Matrix a;
-    Matrix b;
+    MatrixUtil::Matrix a;
+    MatrixUtil::Matrix b;
+    std::string error;
 
     if (!matrix_sizes.empty()) {
-        auto parts = SplitTopLevelComma(matrix_sizes);
-        if (parts.size() != 2) {
-            std::cerr << "Error: --matrix-sizes must be two sizes separated by a comma." << std::endl;
+        if (!MatrixUtil::ParseFromSizes(matrix_sizes, &a, &b, &error)) {
+            if (!error.empty()) {
+                std::cerr << error << std::endl;
+            }
             return 1;
         }
-        size_t a_rows = 0;
-        size_t a_cols = 0;
-        size_t b_rows = 0;
-        size_t b_cols = 0;
-        if (!ParseDims(Trim(parts[0]), &a_rows, &a_cols) ||
-            !ParseDims(Trim(parts[1]), &b_rows, &b_cols)) {
-            std::cerr << "Error: invalid matrix size format. Use RxC,RxC (e.g., 2x3,3x2)." << std::endl;
-            return 1;
-        }
-        a = BuildSequentialMatrix(a_rows, a_cols, 0.0f);
-        b = BuildSequentialMatrix(b_rows, b_cols, 1.0f);
     } else if (!matrix_values.empty()) {
-        auto parts = SplitTopLevelComma(matrix_values);
-        if (parts.size() != 2) {
-            std::cerr << "Error: --matrix-values must contain two matrices separated by a top-level comma." << std::endl;
-            return 1;
-        }
-        if (!ParseMatrixLiteral(parts[0], &a) || !ParseMatrixLiteral(parts[1], &b)) {
-            std::cerr << "Error: invalid matrix literal format. Use {[...],[...]},{[...],[...]}." << std::endl;
+        if (!MatrixUtil::ParseFromValues(matrix_values, &a, &b, &error)) {
+            if (!error.empty()) {
+                std::cerr << error << std::endl;
+            }
             return 1;
         }
     } else {
@@ -414,13 +223,13 @@ int RunMatrixMultiplication(const std::string& matrix_sizes, const std::string& 
         return 1;
     }
 
-    PrintMatrix(a, "Matrix A");
-    PrintMatrix(b, "Matrix B");
-    Matrix result = Multiply(a, b);
-    PrintMatrix(result, "Matrix C");
+    MatrixUtil::PrintMatrix(a, "Matrix A");
+    MatrixUtil::PrintMatrix(b, "Matrix B");
+    MatrixUtil::Matrix result = Multiply(a, b);
+    MatrixUtil::PrintMatrix(result, "Matrix C");
 
     if (verify) {
-        Matrix cpu_result = MultiplyCpu(a, b);
+        MatrixUtil::Matrix cpu_result = MultiplyCpu(a, b);
         constexpr float kTolerance = 1e-5f;
         if (!VerifyMatrixResult(result, cpu_result, kTolerance)) {
             std::cerr << "Matrix verification FAILED." << std::endl;
