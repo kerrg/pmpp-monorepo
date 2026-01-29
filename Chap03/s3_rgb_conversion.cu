@@ -78,17 +78,11 @@ __global__ void convertRGBPixelToGrayscaleKernel(uint8_t* gray, const uint8_t* r
 }
 
 void ValidateImageDimsOrExit(int width, int height, int num_components) {
-    if (width <= 0 || height <= 0 || num_components <= 0) {
-        std::cerr << "Error: invalid image dimensions." << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    LOGIC_CHECK(width > 0 && height > 0 && num_components > 0);
 
     SafeInt<int64_t> pixel_count = SafeInt<int64_t>(width) * height;
     SafeInt<int64_t> total_components = pixel_count * num_components;
-    if (total_components > std::numeric_limits<size_t>::max()) {
-        std::cerr << "Error: image is too large for addressable memory." << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    LOGIC_CHECK(total_components <= std::numeric_limits<size_t>::max());
 }
 
 Mode ParseMode(const std::string& mode_string) {
