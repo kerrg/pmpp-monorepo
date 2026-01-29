@@ -4,7 +4,6 @@
 #include <memory>
 #include <jpeglib.h>
 #include <cstdio>
-#include <cstdint>
 
 struct ImageData {
     std::vector<uint8_t> raw_image;
@@ -16,7 +15,8 @@ struct ImageData {
 class JpegUtil {
 public:
     static ImageData ReadJpeg(const char* filename);
-    static void WriteJpeg(const char* filename, const std::vector<uint8_t>& raw_image, int width, int height, int num_components, int quality = 75);
+    static void WriteJpeg(const char *filename, const std::vector<uint8_t> &raw_image, int width,
+                          int height, int num_components, int quality = 75);
 
 private:
     // Custom deleter for FILE*
