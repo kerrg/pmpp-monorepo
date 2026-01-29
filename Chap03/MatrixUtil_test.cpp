@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <stdexcept>
 #include <string>
 
 TEST(MatrixUtilTest, ParseFromSizesBuildsSequentialMatrices) {
@@ -57,4 +58,63 @@ TEST(MatrixUtilTest, ParseFromValuesRejectsRaggedRows) {
 
     EXPECT_FALSE(MatrixUtil::ParseFromValues("{[1,2],[3]},{[1]}", &a, &b, &error));
     EXPECT_FALSE(error.empty());
+}
+
+TEST(MatrixUtilTest, TrimRemovesLeadingAndTrailingWhitespace) {
+    EXPECT_EQ(MatrixUtil::Trim("  alpha beta  "), "alpha beta");
+    EXPECT_EQ(MatrixUtil::Trim("\t alpha beta\n"), "alpha beta");
+    EXPECT_EQ(MatrixUtil::Trim("alpha"), "alpha");
+    EXPECT_EQ(MatrixUtil::Trim("   \t\r\n"), "");
+    EXPECT_EQ(MatrixUtil::Trim(" alpha  beta "), "alpha  beta");
+}
+
+TEST(MatrixUtilTest, RemoveWhitespaceStripsAllWhitespaceCharacters) {
+    EXPECT_EQ(MatrixUtil::RemoveWhitespace(" a b c "), "abc");
+    EXPECT_EQ(MatrixUtil::RemoveWhitespace("\talpha\nbeta\r"), "alphabeta");
+    EXPECT_EQ(MatrixUtil::RemoveWhitespace("alpha"), "alpha");
+    EXPECT_EQ(MatrixUtil::RemoveWhitespace("   \t\r\n"), "");
+}
+
+TEST(MatrixUtilTest, ParseDimsParsesValidDimensions) {
+    size_t rows = 0;
+    size_t cols = 0;
+    EXPECT_TRUE(MatrixUtil::ParseDims("2x3", &rows, &cols));
+    EXPECT_EQ(rows, 2U);
+    EXPECT_EQ(cols, 3U);
+
+    rows = 0;
+    cols = 0;
+    EXPECT_TRUE(MatrixUtil::ParseDims("4X5", &rows, &cols));
+    EXPECT_EQ(rows, 4U);
+    EXPECT_EQ(cols, 5U);
+
+    rows = 7;
+    cols = 9;
+    EXPECT_FALSE(MatrixUtil::ParseDims("0x3", &rows, &cols));
+    EXPECT_FALSE(MatrixUtil::ParseDims("3x0", &rows, &cols));
+    EXPECT_FALSE(MatrixUtil::ParseDims("3x", &rows, &cols));
+    EXPECT_FALSE(MatrixUtil::ParseDims("x3", &rows, &cols));
+    EXPECT_FALSE(MatrixUtil::ParseDims("3-3", &rows, &cols));
+    EXPECT_FALSE(MatrixUtil::ParseDims("3x3x3", &rows, &cols));
+
+    rows = 0;
+    cols = 0;
+    EXPECT_TRUE(MatrixUtil::ParseDims(" 3x3 ", &rows, &cols));
+    EXPECT_EQ(rows, 3U);
+    EXPECT_EQ(cols, 3U);
+}
+
+TEST(MatrixUtilTest, SplitTopLevelCommaRejectsMismatchedBraces) {
+    EXPECT_THROW(MatrixUtil::SplitTopLevelComma("{[}]"), std::invalid_argument);
+}
+
+TEST(MatrixUtilTest, SplitTopLevelCommaRejectsQuotedStrings) {
+    EXPECT_THROW(MatrixUtil::SplitTopLevelComma("{\"foo, bar\", \"baz\"}"),
+                 std::invalid_argument);
+}
+
+TEST(MatrixUtilTest, SplitTopLevelCommaHandlesEmptyString) {
+    const std::vector<std::string> parts = MatrixUtil::SplitTopLevelComma("");
+    ASSERT_EQ(parts.size(), 1U);
+    EXPECT_EQ(parts[0], "");
 }

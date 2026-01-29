@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class MatrixUtil {
@@ -19,11 +20,18 @@ public:
     static void PrintMatrix(const Matrix& matrix, const std::string& label);
 
 private:
+    friend class MatrixUtilTest_TrimRemovesLeadingAndTrailingWhitespace_Test;
+    friend class MatrixUtilTest_RemoveWhitespaceStripsAllWhitespaceCharacters_Test;
+    friend class MatrixUtilTest_ParseDimsParsesValidDimensions_Test;
+    friend class MatrixUtilTest_SplitTopLevelCommaRejectsMismatchedBraces_Test;
+    friend class MatrixUtilTest_SplitTopLevelCommaRejectsQuotedStrings_Test;
+    friend class MatrixUtilTest_SplitTopLevelCommaHandlesEmptyString_Test;
+
     static std::string Trim(const std::string& input);
     static std::string RemoveWhitespace(const std::string& input);
     static bool ParseDims(const std::string& token, size_t* rows, size_t* cols);
     static std::vector<std::string> SplitTopLevelComma(const std::string& input);
-    static bool ParseRow(const std::string& row_token, std::vector<float>* row_out);
+    static bool ParseRow(std::string_view row_token, std::vector<float>* row_out);
     static bool ParseMatrixLiteral(const std::string& input, Matrix* matrix_out);
     static Matrix BuildSequentialMatrix(size_t rows, size_t cols, float start_value);
 };

@@ -10,6 +10,8 @@ if(BUILD_CUDA_EXECUTABLES)
     target_link_libraries(${S3_RGB_CONVERSION} PRIVATE JPEG::JPEG CLI11::CLI11)
 
     set_target_properties(${S3_RGB_CONVERSION} PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED ON
             CUDA_STANDARD 17
             CUDA_STANDARD_REQUIRED ON
     )
