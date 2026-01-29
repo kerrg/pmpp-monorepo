@@ -1,3 +1,5 @@
+#include <climits>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -7,14 +9,16 @@
 #include <CudaUtil.h>
 #include "SafeInt.hpp"
 #include "JpegUtil.h"
+#include "matrix_util.h"
 
 namespace {
-    constexpr int kCudaBlockSize = 16;
-    constexpr char kModeColorToGrayscale[] = "color2grayscale";
     constexpr char kModeBlur[] = "blur";
+    constexpr char kModeColorToGrayscale[] = "color2grayscale";
     constexpr int kDefaultBlurSize = 1;
+    constexpr int kCudaBlockSize = 16;
     constexpr int kDefaultBlurPasses = 3;
-}
+
+} // namespace
 
 enum class Mode {
     ColorToGrayscale,
@@ -40,17 +44,21 @@ __global__ void blurRGBPixels(uint8_t* blurred, uint8_t* rgb, int width, int hei
                 }
                 neighbors_visited++;
 
-                int pixel_index = cur_row * width + cur_col;
-                r += rgb[3 * pixel_index];
-                g += rgb[3 * pixel_index + 1];
-                b += rgb[3 * pixel_index + 2];
+                size_t pixel_index = static_cast<size_t>(cur_row) * static_cast<size_t>(width)
+                                     + static_cast<size_t>(cur_col);
+                size_t base = pixel_index * 3U;
+                r += rgb[base];
+                g += rgb[base + 1U];
+                b += rgb[base + 2U];
             }
         }
         // neighbors_visited will always be >= 1
-        int pixel_index = row * width + col;
-        blurred[3*pixel_index] = (r / neighbors_visited);
-        blurred[3*pixel_index + 1] = (g / neighbors_visited);
-        blurred[3*pixel_index + 2] = (b / neighbors_visited);
+        size_t pixel_index = static_cast<size_t>(row) * static_cast<size_t>(width)
+                             + static_cast<size_t>(col);
+        size_t base = pixel_index * 3U;
+        blurred[base] = static_cast<uint8_t>(r / neighbors_visited);
+        blurred[base + 1U] = static_cast<uint8_t>(g / neighbors_visited);
+        blurred[base + 2U] = static_cast<uint8_t>(b / neighbors_visited);
     }
 }
 
@@ -59,11 +67,27 @@ __global__ void convertRGBPixelToGrayscaleKernel(uint8_t* gray, const uint8_t* r
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (col < width && row < height) {
-        int i = row * width + col;
-        uint8_t r = rgb[3*i];
-        uint8_t g = rgb[3*i+1];
-        uint8_t b = rgb[3*i+2];
+        size_t i = static_cast<size_t>(row) * static_cast<size_t>(width)
+                   + static_cast<size_t>(col);
+        size_t base = i * 3U;
+        uint8_t r = rgb[base];
+        uint8_t g = rgb[base + 1U];
+        uint8_t b = rgb[base + 2U];
         gray[i] = r * 0.21f + g * 0.72f + b * 0.07f;
+    }
+}
+
+void ValidateImageDimsOrExit(int width, int height, int num_components) {
+    if (width <= 0 || height <= 0 || num_components <= 0) {
+        std::cerr << "Error: invalid image dimensions." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    SafeInt<int64_t> pixel_count = SafeInt<int64_t>(width) * height;
+    SafeInt<int64_t> total_components = pixel_count * num_components;
+    if (total_components > std::numeric_limits<size_t>::max()) {
+        std::cerr << "Error: image is too large for addressable memory." << std::endl;
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -74,10 +98,153 @@ Mode ParseMode(const std::string& mode_string) {
     return Mode::ColorToGrayscale;
 }
 
+__global__ void MatMulKernel(const float* a, const float* b, float* c,
+                             int a_rows, int a_cols, int b_cols) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < a_rows && col < b_cols) {
+        float sum = 0.0f;
+        for (int k = 0; k < a_cols; ++k) {
+            sum += a[row * a_cols + k] * b[k * b_cols + col];
+        }
+        c[row * b_cols + col] = sum;
+    }
+}
+
+MatrixUtil::Matrix Multiply(const MatrixUtil::Matrix& a, const MatrixUtil::Matrix& b) {
+    MatrixUtil::Matrix result;
+    result.rows = a.rows;
+    result.cols = b.cols;
+    result.values.assign(result.rows * result.cols, 0.0f);
+
+    const size_t a_count = a.values.size();
+    const size_t b_count = b.values.size();
+    const size_t c_count = result.values.size();
+
+    auto a_dev = MakeCudaUnique<float>(a_count);
+    auto b_dev = MakeCudaUnique<float>(b_count);
+    auto c_dev = MakeCudaUnique<float>(c_count);
+
+    SafeInt<size_t> a_bytes(a_count);
+    a_bytes *= sizeof(float);
+    SafeInt<size_t> b_bytes(b_count);
+    b_bytes *= sizeof(float);
+    SafeInt<size_t> c_bytes(c_count);
+    c_bytes *= sizeof(float);
+
+    CUDA_CHECK(cudaMemcpy(a_dev.get(), a.values.data(), a_bytes,
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(b_dev.get(), b.values.data(), b_bytes,
+                          cudaMemcpyHostToDevice));
+
+    dim3 dimBlock(kCudaBlockSize, kCudaBlockSize, 1);
+    dim3 dimGrid(div_up(static_cast<int>(b.cols), kCudaBlockSize),
+                 div_up(static_cast<int>(a.rows), kCudaBlockSize), 1);
+    MatMulKernel<<<dimGrid, dimBlock>>>(a_dev.get(), b_dev.get(), c_dev.get(),
+                                        static_cast<int>(a.rows),
+                                        static_cast<int>(a.cols),
+                                        static_cast<int>(b.cols));
+    CUDA_CHECK(cudaGetLastError());
+
+    CUDA_CHECK(cudaMemcpy(result.values.data(), c_dev.get(), c_bytes,
+                          cudaMemcpyDeviceToHost));
+    return result;
+}
+
+MatrixUtil::Matrix MultiplyCpu(const MatrixUtil::Matrix& a, const MatrixUtil::Matrix& b) {
+    MatrixUtil::Matrix result;
+    result.rows = a.rows;
+    result.cols = b.cols;
+    result.values.assign(result.rows * result.cols, 0.0f);
+    for (size_t i = 0; i < a.rows; ++i) {
+        for (size_t k = 0; k < a.cols; ++k) {
+            const float aval = a.values[i * a.cols + k];
+            for (size_t j = 0; j < b.cols; ++j) {
+                result.values[i * result.cols + j] += aval * b.values[k * b.cols + j];
+            }
+        }
+    }
+    return result;
+}
+
+bool VerifyMatrixResult(const MatrixUtil::Matrix& gpu, const MatrixUtil::Matrix& cpu,
+                        float tolerance) {
+    if (gpu.rows != cpu.rows || gpu.cols != cpu.cols || gpu.values.size() != cpu.values.size()) {
+        std::cerr << "Verification failed: mismatched result dimensions." << std::endl;
+        return false;
+    }
+    for (size_t i = 0; i < cpu.values.size(); ++i) {
+        const float diff = std::fabs(cpu.values[i] - gpu.values[i]);
+        if (diff > tolerance) {
+            const size_t row = i / cpu.cols;
+            const size_t col = i % cpu.cols;
+            std::cerr << "Mismatch at (" << row << "," << col << "): CPU=" << cpu.values[i]
+                      << ", GPU=" << gpu.values[i] << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+int RunMatrixMultiplication(const std::string& matrix_sizes, const std::string& matrix_values,
+                            bool verify) {
+    if (!matrix_sizes.empty() && !matrix_values.empty()) {
+        std::cerr << "Error: use either --matrix-sizes or --matrix-values, not both." << std::endl;
+        return 1;
+    }
+
+    MatrixUtil::Matrix a;
+    MatrixUtil::Matrix b;
+    std::string error;
+
+    if (!matrix_sizes.empty()) {
+        if (!MatrixUtil::ParseFromSizes(matrix_sizes, &a, &b, &error)) {
+            if (!error.empty()) {
+                std::cerr << error << std::endl;
+            }
+            return 1;
+        }
+    } else if (!matrix_values.empty()) {
+        if (!MatrixUtil::ParseFromValues(matrix_values, &a, &b, &error)) {
+            if (!error.empty()) {
+                std::cerr << error << std::endl;
+            }
+            return 1;
+        }
+    } else {
+        std::cerr << "Error: --matrix-multiplication requires --matrix-sizes or --matrix-values." << std::endl;
+        return 1;
+    }
+
+    if (a.cols != b.rows) {
+        std::cerr << "Error: incompatible sizes for multiplication: "
+                  << a.rows << "x" << a.cols << " and " << b.rows << "x" << b.cols << "."
+                  << std::endl;
+        return 1;
+    }
+
+    MatrixUtil::PrintMatrix(a, "Matrix A");
+    MatrixUtil::PrintMatrix(b, "Matrix B");
+    MatrixUtil::Matrix result = Multiply(a, b);
+    MatrixUtil::PrintMatrix(result, "Matrix C");
+
+    if (verify) {
+        MatrixUtil::Matrix cpu_result = MultiplyCpu(a, b);
+        constexpr float kTolerance = 1e-5f;
+        if (!VerifyMatrixResult(result, cpu_result, kTolerance)) {
+            std::cerr << "Matrix verification FAILED." << std::endl;
+            return 1;
+        }
+        std::cout << "Matrix verification PASSED." << std::endl;
+    }
+    return 0;
+}
+
 void RunColorToGrayscale(const ImageData& image_data, const std::string& output_filename) {
     int width = image_data.width;
     int height = image_data.height;
 
+    ValidateImageDimsOrExit(width, height, 3);
     SafeInt<size_t> rgb_size_in_bytes = SafeInt<size_t>(sizeof(uint8_t)) * width * height * 3;
     SafeInt<size_t> gray_size_in_bytes = SafeInt<size_t>(sizeof(uint8_t)) * width * height;
 
@@ -104,6 +271,7 @@ void RunBlur(const ImageData& image_data, const std::string& output_filename, in
     int width = image_data.width;
     int height = image_data.height;
 
+    ValidateImageDimsOrExit(width, height, 3);
     SafeInt<size_t> blurred_size_in_bytes = SafeInt<size_t>(sizeof(uint8_t)) * width * height * 3;
     auto pass_in_pixels = MakeCudaUnique<uint8_t>(blurred_size_in_bytes);
     auto pass_out_pixels = MakeCudaUnique<uint8_t>(blurred_size_in_bytes);
@@ -134,17 +302,39 @@ int main(int argc, char *argv[]) {
     std::string mode = kModeColorToGrayscale;
     int blur_size = kDefaultBlurSize;
     int blur_passes = kDefaultBlurPasses;
+    bool matrix_multiplication = false;
+    bool matrix_verify = false;
+    std::string matrix_sizes;
+    std::string matrix_values;
 
-    app.add_option("-i,--input", input_filename, "Input JPEG file")->required();
-    app.add_option("-o,--output", output_filename, "Output JPEG file")->required();
-    app.add_option("-m,--mode", mode, "Conversion mode")
+    auto* input_opt = app.add_option("-i,--input", input_filename, "Input JPEG file");
+    auto* output_opt = app.add_option("-o,--output", output_filename, "Output JPEG file");
+    auto* mode_opt = app.add_option("-m,--mode", mode, "Conversion mode")
         ->check(CLI::IsMember({kModeColorToGrayscale, kModeBlur}));
     auto* blur_size_opt = app.add_option("-b,--blur-size", blur_size, "Blur radius in pixels (blur mode only)")
         ->check(CLI::Range(1, 64));
     auto* blur_passes_opt = app.add_option("-p,--blur-passes", blur_passes, "Number of blur passes (blur mode only)")
         ->check(CLI::Range(1, 32));
+    app.add_flag("--matrix-multiplication", matrix_multiplication, "Run matrix multiplication");
+    app.add_flag("--matrix-verify", matrix_verify, "Verify matrix multiplication against CPU");
+    app.add_option("--matrix-sizes", matrix_sizes, "Matrix sizes as RxC,RxC (e.g., 2x3,3x2)");
+    app.add_option("--matrix-values", matrix_values, "Matrix values as {[...],[...]},{[...],[...]}");
 
     CLI11_PARSE(app, argc, argv);
+
+    if (matrix_multiplication) {
+        if (input_opt->count() > 0 || output_opt->count() > 0 ||
+            mode_opt->count() > 0 || blur_size_opt->count() > 0 || blur_passes_opt->count() > 0) {
+            std::cerr << "Error: matrix multiplication cannot be combined with image conversion options." << std::endl;
+            return 1;
+        }
+        return RunMatrixMultiplication(matrix_sizes, matrix_values, matrix_verify);
+    }
+
+    if (input_filename.empty() || output_filename.empty()) {
+        std::cerr << "Error: --input and --output are required for image conversion." << std::endl;
+        return 1;
+    }
 
     Mode mode_kind = ParseMode(mode);
     if (mode_kind != Mode::Blur && (blur_size_opt->count() > 0 || blur_passes_opt->count() > 0)) {

@@ -1,16 +1,11 @@
 #pragma once
 
+#include "LogicCheck.h"
+#include "SafeInt.hpp"
+
 #include <cuda_runtime.h>
 #include <iostream>
 #include <memory>
-#include "SafeInt.hpp"
-
-#define LOGIC_CHECK(cond)                                                      \
-  if (!(cond)) {                                                               \
-    std::cerr << "Logic check failed at " << __FILE__ << ":" << __LINE__       \
-              << std::endl;                                                    \
-    exit(EXIT_FAILURE);                                                        \
-  }
 
 #define CUDA_CHECK(call)                                                       \
   do {                                                                         \

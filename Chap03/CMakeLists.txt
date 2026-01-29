@@ -2,7 +2,7 @@ set(S3_RGB_CONVERSION rgb_converter) # Use a consistent name for the executable
 
 if(BUILD_CUDA_EXECUTABLES)
     # Add the executable
-    add_executable(${S3_RGB_CONVERSION} s3_rgb_conversion.cu JpegUtil.cpp)
+    add_executable(${S3_RGB_CONVERSION} s3_rgb_conversion.cu JpegUtil.cpp matrix_util.cpp)
 
     # Link JPEGLIB and SafeInt headers
     find_package(CLI11 CONFIG REQUIRED)
@@ -10,6 +10,8 @@ if(BUILD_CUDA_EXECUTABLES)
     target_link_libraries(${S3_RGB_CONVERSION} PRIVATE JPEG::JPEG CLI11::CLI11)
 
     set_target_properties(${S3_RGB_CONVERSION} PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED ON
             CUDA_STANDARD 17
             CUDA_STANDARD_REQUIRED ON
     )
@@ -32,4 +34,8 @@ if(BUILD_TESTING)
     add_executable(jpeg_util_test JpegUtil_test.cpp JpegUtil.cpp)
     target_link_libraries(jpeg_util_test PRIVATE GTest::gtest_main JPEG::JPEG)
     gtest_discover_tests(jpeg_util_test)
+
+    add_executable(matrix_util_test MatrixUtil_test.cpp matrix_util.cpp)
+    target_link_libraries(matrix_util_test PRIVATE GTest::gtest_main)
+    gtest_discover_tests(matrix_util_test)
 endif()
